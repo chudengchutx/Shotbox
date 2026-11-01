@@ -1,0 +1,5 @@
+.build/
+Shotbox.app/
+.DS_Store
+*.xcodeproj
+.swiftpm/
