@@ -37,11 +37,15 @@ enum Capturer {
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
-            config.width = display.width
-            config.height = display.height
+            // SCDisplay 的宽高可能是点尺寸，按屏幕缩放因子显式取像素，避免 Retina 下只剩 1x
+            let pixelWidth = Int((screen.frame.width * screen.backingScaleFactor).rounded())
+            let pixelHeight = Int((screen.frame.height * screen.backingScaleFactor).rounded())
+            config.width = max(pixelWidth, display.width)
+            config.height = max(pixelHeight, display.height)
             config.showsCursor = false
             config.ignoreShadowsSingleWindow = true
             config.captureResolution = .best
+            config.scalesToFit = false
 
             do {
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)

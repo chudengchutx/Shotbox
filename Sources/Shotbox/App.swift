@@ -23,6 +23,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.openEditor(image: image, scale: 2, activate: false)
             }
         }
+
+        // 命令行验收抓屏链路：Shotbox --capture-test /tmp/shot.png
+        if let flagIndex = CommandLine.arguments.firstIndex(of: "--capture-test") {
+            let path = CommandLine.arguments.count > flagIndex + 1
+                ? CommandLine.arguments[flagIndex + 1]
+                : "/tmp/shotbox-capture.png"
+            Task { @MainActor in
+                guard ScreenPermission.isGranted else {
+                    print("CAPTURE FAIL permission_denied")
+                    exit(2)
+                }
+                do {
+                    let shots = try await Capturer.captureAllScreens()
+                    guard let first = shots.first else {
+                        print("CAPTURE FAIL no_displays")
+                        exit(3)
+                    }
+                    try ImageExporter.pngData(from: first.image).write(to: URL(fileURLWithPath: path))
+                    print("CAPTURE OK \(path) \(first.image.width)x\(first.image.height) scale=\(first.scale)")
+                } catch {
+                    print("CAPTURE FAIL \(error.localizedDescription)")
+                }
+                exit(0)
+            }
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
