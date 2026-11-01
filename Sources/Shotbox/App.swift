@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         setupHotKeys()
+        requestPermissionOnLaunchIfNeeded()
 
         // 开发/验收用：不抢焦点地打开一个带示例标注的编辑器窗口
         if CommandLine.arguments.contains("--editor-demo") {
@@ -49,6 +50,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 exit(0)
             }
         }
+    }
+
+    /// 首次启动主动请求一次屏幕录制权限，避免用户去设置里翻。
+    private func requestPermissionOnLaunchIfNeeded() {
+        guard !ScreenPermission.isGranted else { return }
+        let key = "didRequestScreenPermission"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        ScreenPermission.request()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
