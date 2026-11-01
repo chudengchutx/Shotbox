@@ -253,16 +253,21 @@ final class CanvasView: NSView {
         guard px >= 0, py >= 0, px < baseImage.width, py < baseImage.height else { return nil }
         guard let cropped = baseImage.cropping(to: CGRect(x: px, y: py, width: 1, height: 1)) else { return nil }
         var pixel = [UInt8](repeating: 0, count: 4)
-        guard let ctx = CGContext(
-            data: &pixel,
-            width: 1,
-            height: 1,
-            bitsPerComponent: 8,
-            bytesPerRow: 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return nil }
-        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let drawn: Bool = pixel.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress,
+                  let ctx = CGContext(
+                    data: base,
+                    width: 1,
+                    height: 1,
+                    bitsPerComponent: 8,
+                    bytesPerRow: 4,
+                    space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                  ) else { return false }
+            ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard drawn else { return nil }
         return NSColor(
             srgbRed: CGFloat(pixel[0]) / 255,
             green: CGFloat(pixel[1]) / 255,

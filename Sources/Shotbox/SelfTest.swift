@@ -107,7 +107,109 @@ enum SelfTest {
             return 1
         }
 
+        if !verifyStitching() {
+            return 1
+        }
+
         return 0
+    }
+
+    /// 用合成页面模拟逐帧滚动，验证拼接结果与原页面逐像素一致。
+    @MainActor
+    private static func verifyStitching() -> Bool {
+        let pageWidth = 800
+        let pageHeight = 3000
+        let viewport = 800
+        let step = 240
+
+        guard let page = makeScrollPage(width: pageWidth, height: pageHeight) else {
+            print("SELFTEST STITCH FAIL 无法生成页面")
+            return false
+        }
+
+        let stitcher = ScrollStitcher(maxHeight: 20000)
+        guard let first = page.cropping(to: CGRect(x: 0, y: 0, width: pageWidth, height: viewport)) else {
+            print("SELFTEST STITCH FAIL 裁切首帧失败")
+            return false
+        }
+        stitcher.seed(first)
+
+        var offset = 0
+        var frames = 1
+        while offset + viewport < pageHeight {
+            offset = min(offset + step, pageHeight - viewport)
+            guard let frame = page.cropping(to: CGRect(x: 0, y: offset, width: pageWidth, height: viewport)) else { break }
+            _ = stitcher.append(frame)
+            frames += 1
+            if stitcher.isFull { break }
+        }
+
+        guard stitcher.height == pageHeight else {
+            print("SELFTEST STITCH FAIL 高度 \(stitcher.height) != \(pageHeight)（\(frames) 帧）")
+            return false
+        }
+
+        guard let expected = ScrollStitcher.topDownRGBA(page),
+              let stitched = stitcher.makeImage(),
+              let actual = ScrollStitcher.topDownRGBA(stitched) else {
+            print("SELFTEST STITCH FAIL 无法读取像素")
+            return false
+        }
+
+        let stride = pageWidth * 4
+        for row in Swift.stride(from: 0, to: pageHeight, by: 97) {
+            let start = row * stride
+            let end = start + stride
+            if expected.data[start..<end] != actual.data[start..<end] {
+                print("SELFTEST STITCH FAIL 第 \(row) 行内容不一致")
+                return false
+            }
+        }
+
+        print("SELFTEST STITCH OK \(frames) 帧 -> \(pageWidth)x\(stitcher.height)")
+        return true
+    }
+
+    /// 生成一张每行颜色都不同的“网页”，用于拼接验证。
+    @MainActor
+    private static func makeScrollPage(width: Int, height: Int) -> CGImage? {
+        guard let ctx = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        ctx.setFillColor(NSColor.black.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        for row in 0..<height {
+            // 把行号编码进像素，保证每一行都唯一，便于验证拼接是否错位
+            let red = CGFloat(row & 0xFF) / 255
+            let green = CGFloat((row >> 8) & 0xFF) / 255
+            let color = NSColor(srgbRed: red, green: green, blue: 0.35, alpha: 1)
+            ctx.setFillColor(color.cgColor)
+            ctx.fill(CGRect(x: 0, y: CGFloat(height - row - 1), width: CGFloat(width), height: 1))
+        }
+
+        for offset in Swift.stride(from: 0, to: height, by: 200) {
+            let text = NSAttributedString(
+                string: "offset \(offset)",
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 22, weight: .bold),
+                    .foregroundColor: NSColor.white
+                ]
+            )
+            let previous = NSGraphicsContext.current
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            text.draw(at: CGPoint(x: 40, y: CGFloat(height - offset - 40)))
+            NSGraphicsContext.current = previous
+        }
+
+        return ctx.makeImage()
     }
 
     static func makeBaseImage() -> CGImage? {

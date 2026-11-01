@@ -59,6 +59,41 @@ enum Capturer {
     }
 }
 
+/// 复用同一 filter 连续抓取固定区域的多帧，供滚动长截图使用。
+final class RegionCapturer {
+    private let filter: SCContentFilter
+    private let sourceRect: CGRect
+    private let pixelWidth: Int
+    private let pixelHeight: Int
+
+    init(shot: ScreenShot, rect: CGRect) async throws {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let display = content.displays.first(where: { $0.displayID == shot.displayID }) else {
+            throw NSError(domain: "Shotbox", code: 10, userInfo: [NSLocalizedDescriptionKey: "找不到对应显示器"])
+        }
+        self.filter = SCContentFilter(display: display, excludingWindows: [])
+        // sourceRect 相对显示器左上角，入参 rect 相对屏幕左下角
+        self.sourceRect = CGRect(
+            x: rect.minX,
+            y: shot.frame.height - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+        self.pixelWidth = max(Int((rect.width * shot.scale).rounded()), 1)
+        self.pixelHeight = max(Int((rect.height * shot.scale).rounded()), 1)
+    }
+
+    func capture() async throws -> CGImage {
+        let config = SCStreamConfiguration()
+        config.sourceRect = sourceRect
+        config.width = pixelWidth
+        config.height = pixelHeight
+        config.showsCursor = false
+        config.captureResolution = .best
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+    }
+}
+
 /// 选区阶段：每个显示器一个覆盖窗口，抓图作为背景，拖动框选。
 @MainActor
 final class SelectionController {

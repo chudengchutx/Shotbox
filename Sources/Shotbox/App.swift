@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var editor: EditorWindowController?
     private var lastShots: [ScreenShot] = []
     private var lastArea: (displayID: CGDirectDisplayID, rect: CGRect)?
+    private var scrollSession: ScrollCaptureSession?
     private var permissionItem: NSMenuItem?
 
     /// 菜单栏常驻应用启动时不弹窗，权限状态直接写在菜单里，避免抢焦点。
@@ -75,8 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(item("区域截图", #selector(captureArea), "⌘⇧2"))
         menu.addItem(item("全屏截图", #selector(captureFullScreen), "⌥⌘3"))
+        menu.addItem(item("滚动长截图", #selector(captureScrolling), "⌃⇧2"))
         menu.addItem(item("重开上次选区", #selector(reopenLastArea), "⌥⇧2"))
-        menu.addItem(item("滚动截图（开发中）", nil, ""))
         menu.addItem(.separator())
         menu.addItem(item("从剪贴板识别文字", #selector(ocrFromPasteboard), "⌃⌘2"))
         menu.addItem(item("从剪贴板打开图片", #selector(openFromPasteboard), ""))
@@ -108,6 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         })
         hotKeys.append(HotKey.register(keyCode: 19, modifiers: HotKey.cmd | HotKey.control) { [weak self] in
             self?.ocrFromPasteboard()
+        })
+        hotKeys.append(HotKey.register(keyCode: 19, modifiers: HotKey.control | HotKey.shift) { [weak self] in
+            self?.captureScrolling()
         })
         hotKeys.append(HotKey.register(keyCode: 19, modifiers: HotKey.option | HotKey.shift) { [weak self] in
             self?.reopenLastArea()
@@ -163,8 +167,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc private func reopenLastArea() {
-        guard let area = lastArea else {
+    @objc private func captureScrolling() {
+        guard ensurePermission() else { return }
+        guard selection == nil, scrollSession == nil else { return }
+        Task { @MainActor in
+            do {
+                let shots = try await Capturer.captureAllScreens()
+                guard !shots.isEmpty else {
+                    self.notify("截图失败", "没有获取到显示器画面。")
+                    return
+                }
+                self.lastShots = shots
+                let controller = SelectionController(shots: shots)
+                self.selection = controller
+                controller.onSelection = { [weak self] shot, rect in
+                    guard let self else { return }
+                    self.selection = nil
+                    self.startScrolling(shot: shot, rect: rect)
+                }
+                controller.onCancel = { [weak self] in
+                    self?.selection = nil
+                }
+                controller.begin()
+            } catch {
+                self.notify("截图失败", error.localizedDescription)
+            }
+        }
+    }
+
+    private func startScrolling(shot: ScreenShot, rect: CGRect) {
+        let session = ScrollCaptureSession(shot: shot, rect: rect)
+        scrollSession = session
+        session.onFinish = { [weak self] image in
+            guard let self else { return }
+            self.scrollSession = nil
+            self.lastArea = (shot.displayID, rect)
+            self.openEditor(image: image, scale: shot.scale)
+        }
+        session.onCancel = { [weak self] in
+            self?.scrollSession = nil
+        }
+        session.start()
+    }
+
+    @objc private func reopenLastArea() {        guard let area = lastArea else {
             notify("没有历史选区", "先做一次区域截图，之后可以用它重开。")
             return
         }
