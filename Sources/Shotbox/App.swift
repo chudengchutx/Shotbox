@@ -61,6 +61,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ScreenPermission.request()
     }
 
+    /// 点击 Dock 图标（没有可见窗口）时，直接弹出菜单，相当于菜单栏入口。
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            statusItem.button?.performClick(nil)
+        }
+        return true
+    }
+
     func menuWillOpen(_ menu: NSMenu) {
         guard let permissionItem else { return }
         if ScreenPermission.isGranted {

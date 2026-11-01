@@ -13,6 +13,7 @@ MainActor.assumeIsolated {
     let app = NSApplication.shared
     let appDelegate = AppDelegate()
     app.delegate = appDelegate
-    app.setActivationPolicy(.accessory)
+    // 常规策略：在 Dock 里保留入口，避免菜单栏图标被挤掉时找不到 app
+    app.setActivationPolicy(.regular)
     app.run()
 }
